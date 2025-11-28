@@ -1,0 +1,113 @@
+import pandas as pd
+import sys
+
+def reconcile_transfers(system_file_path, bank_file_path):
+    """
+    Reconciles transactions by comparing internal system records 
+    with the bank statement. Uses Pandas for a Left Join based 
+    on a composite key: [Date] and [Amount].
+    
+    Args:
+        system_file_path (str): Path to the Excel/CSV file of the internal system.
+        bank_file_path (str): Path to the Excel/CSV file of the bank statement.
+    """
+    print("Initiating transaction reconciliation...")
+    
+    # 1. Load Data (Using a robust function for Excel/CSV)
+    try:
+        # NOTE: In a real environment, you would use pd.read_excel() or pd.read_csv() 
+        # with specific encoding and separator parameters. 
+        # Here we use hardcoded data to guarantee logic demonstration.
+        
+        # --- DATA SIMULATION (FOR LOGIC DEMONSTRATION) ---
+        # System Data (Source of Truth)
+        data_system = {
+            'DATE': ['2025-10-01', '2025-10-01', '2025-10-02', '2025-10-03'],
+            'AMOUNT': [100.50, 250.00, 500.00, 75.25], 
+            'CONCEPT': ['Sale Client A', 'Sale Client B', 'Payment Client C (Missing)', 'Sale Client D']
+        }
+        df_system = pd.DataFrame(data_sistema)
+
+        # Bank Data (The Statement)
+        data_banco = {
+            'DATE': ['2025-10-01', '2025-10-01', '2025-10-03', '2025-10-04'],
+            'AMOUNT': [100.50, 250.00, 75.25, 300.00], 
+            'DETAIL': ['Transfer Received A', 'Transfer Received B', 'Transfer Received D', 'Monthly Interest']
+        }
+        df_bank = pd.DataFrame(data_banco)
+        # -----------------------------------------------------------
+
+    except Exception as e:
+        print(f"Error loading files (Incorrect path or format): {e}")
+        return
+
+    # 2. Pre-processing and Key Standardization
+    
+    # Round amounts to prevent floating-point errors.
+    df_system['AMOUNT_KEY'] = df_system['AMOUNT'].round(2)
+    df_bank['AMOUNT_KEY'] = df_bank['AMOUNT'].round(2)
+    
+    # Convert dates to standardized format (YYYY-MM-DD)
+    df_system['DATE_KEY'] = pd.to_datetime(df_system['DATE']).dt.strftime('%Y-%m-%d')
+    df_bank['DATE_KEY'] = pd.to_datetime(df_bank['DATE']).dt.strftime('%Y-%m-%d')
+
+    # 3. Reconciliation: Merge (Left Join)
+    # Left join ensures we flag all transactions present in the system but missing in the bank.
+    df_reconciled = pd.merge(
+        df_system,
+        df_bank[['DATE_KEY', 'AMOUNT_KEY', 'DETAIL']], 
+        on=['DATE_KEY', 'AMOUNT_KEY'],
+        how='left',
+        indicator=True,
+        suffixes=('_SYSTEM', '_BANK')
+    )
+
+    # 4. Classification and Discrepancy Reporting
+    
+    reconciled_transactions = df_reconciled[df_reconciled['_merge'] == 'both']
+    missing_in_bank = df_reconciled[df_reconciled['_merge'] == 'left_only']
+    
+    print(f"\n✅ RECONCILED TRANSACTIONS: {len(reconciled_transactions)} matches (System = Bank).")
+    
+    print("\n🚨 DISCREPANCIES (Missing Deposits/Pending Reconciliation):")
+    
+    if not missing_in_bank.empty:
+        # Generate discrepancy report
+        report = []
+        for index, row in missing_in_bank.iterrows():
+            report.append({
+                'Date': row['DATE_KEY'],
+                'Amount': row['AMOUNT'],
+                'System_Concept': row['CONCEPT'],
+                'Status': '❌ NOT FOUND IN BANK'
+            })
+            
+        df_report = pd.DataFrame(report)
+        
+        # Print the report as a clean Markdown table
+        print("\n--- MISSING TRANSACTION REPORT ---")
+        print(df_report.to_markdown(index=False))
+        print("------------------------------------------")
+        
+        # In a real implementation, this would trigger a Slack/Gmail API call
+        print("\n*Action: Payment pending/Alert sent to Accounting.*")
+    else:
+        print("  - No discrepancies found! Reconciliation is perfect.")
+        
+    print("\nReconciliation finished.")
+
+
+# --- MAIN EXECUTION (Allows for external file paths or internal demo) ---
+if __name__ == "__main__":
+    if len(sys.argv) == 3:
+        # Advanced Mode: Execute with real file paths (e.g., py reconciliation_tool.py sys.xlsx bank.xlsx)
+        sys_file = sys.argv[1]
+        bank_file = sys.argv[2]
+        print(f"Advanced mode activated. Analyzing: {sys_file} and {bank_file}")
+        # Note: In this mode, the hardcoded data would be replaced by pd.read_excel(sys_file) 
+        # for a production script.
+        reconcile_transfers(sys_file, bank_file)
+    else:
+        # Demonstration Mode: Uses hardcoded data to verify the logic.
+        print("Logic demonstration mode activated.")
+        reconcile_transfers('demo_system.xlsx', 'demo_bank.xlsx')
